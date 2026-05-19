@@ -63,25 +63,25 @@ module Client = struct
     let fields =
       []
       |> (fun acc ->
-           match cfg.temperature with
-           | None -> acc
-           | Some v -> ("temperature", `Float v) :: acc)
+          match cfg.temperature with
+          | None -> acc
+          | Some v -> ("temperature", `Float v) :: acc)
       |> (fun acc ->
-           match cfg.top_p with
-           | None -> acc
-           | Some v -> ("topP", `Float v) :: acc)
+          match cfg.top_p with
+          | None -> acc
+          | Some v -> ("topP", `Float v) :: acc)
       |> (fun acc ->
-           match cfg.top_k with
-           | None -> acc
-           | Some v -> ("topK", `Int v) :: acc)
+          match cfg.top_k with
+          | None -> acc
+          | Some v -> ("topK", `Int v) :: acc)
       |> (fun acc ->
-           match cfg.max_output_tokens with
-           | None -> acc
-           | Some v -> ("maxOutputTokens", `Int v) :: acc)
+          match cfg.max_output_tokens with
+          | None -> acc
+          | Some v -> ("maxOutputTokens", `Int v) :: acc)
     in
     `Assoc (List.rev fields)
 
-  let request_to_yojson request =
+  let json_of_request request =
     let base = [ ("contents", `List (List.map message_to_yojson request.messages)) ] in
     let fields =
       match request.generation_config with
@@ -116,46 +116,38 @@ module Client = struct
     match api_key with
     | None -> Error "Missing Gemini API key. Pass ~api_key or set GEMINI_API_KEY"
     | Some key ->
-        let base_url = trim_trailing_slash client.base_url in
-        let path =
-          Printf.sprintf "/v1beta/models/%s:generateContent" (Uri.pct_encode request.model)
-        in
-        let uri =
-          Uri.of_string base_url
-          |> fun u -> Uri.with_path u path
-          |> fun u -> Uri.add_query_param' u ("key", key)
-        in
-        let body = request_to_yojson request |> Yojson.Safe.to_string in
-        let headers = Header.init_with "content-type" "application/json" in
-        let result =
-          Lwt_main.run
-            (Cohttp_lwt_unix.Client.post ~headers
-               ~body:(Cohttp_lwt.Body.of_string body)
-               uri
-            >>= fun (resp, body_stream) ->
+      let base_url = trim_trailing_slash client.base_url in
+      let path =
+        Printf.sprintf "/v1beta/models/%s:generateContent" (Uri.pct_encode request.model)
+      in
+      let uri =
+        Uri.of_string base_url
+        |> fun u -> Uri.with_path u path
+        |> fun u -> Uri.add_query_param' u ("key", key)
+      in
+      let body = json_of_request request |> Yojson.Safe.to_string in
+      let headers = Header.init_with "content-type" "application/json" in
+      let result =
+        let open Lwt.Syntax in
+        Lwt_main.run
+          (
+            let* (resp, body_stream) = Cohttp_lwt_unix.Client.post ~headers ~body:(Cohttp_lwt.Body.of_string body) uri in
             Cohttp_lwt.Body.to_string body_stream >|= fun body_text ->
             let status = Response.status resp in
             match Yojson.Safe.from_string body_text with
-            | exception _ ->
-                Error
-                  (Printf.sprintf "Gemini API returned non-JSON response (%d): %s"
-                     (Code.code_of_status status) body_text)
+            | exception _ -> Error (Printf.sprintf "Gemini API returned non-JSON response (%d): %s" (Code.code_of_status status) body_text)
             | json ->
-                if Code.is_success (Code.code_of_status status) then
-                  (try Ok { text = extract_text_from_response json; raw = json } with
-                   | _ ->
-                       Error
-                         ("Gemini API success response could not be parsed: "
-                        ^ body_text))
-                else
-                  let message =
-                    match extract_error_message json with
-                    | Some m -> m
-                    | None -> body_text
-                  in
-                  Error
-                    (Printf.sprintf "Gemini API error (%d): %s"
-                       (Code.code_of_status status) message))
-        in
-        result
+              if Code.is_success (Code.code_of_status status) then
+                (try Ok { text = extract_text_from_response json; raw = json } with
+                 | _ -> Error ("Gemini API success response could not be parsed: " ^ body_text))
+              else
+                let message =
+                  match extract_error_message json with
+                  | Some m -> m
+                  | None -> body_text
+                in
+                Error (Printf.sprintf "Gemini API error (%d): %s" (Code.code_of_status status) message)
+          )
+      in
+      result
 end
