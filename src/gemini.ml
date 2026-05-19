@@ -3,92 +3,53 @@ module Client = struct
   open Lwt.Infix
 
   type t = {
-    base_url : string;
+    url : string;
     api_key : string option;
   }
+
+  let default_url = "https://generativelanguage.googleapis.com"
+
+  let create ?(url = default_url) ?api_key () = { url; api_key }
 
   type role =
     | User
     | Model
     | System
 
-  type part =
-    | Text of string
+  let string_of_role = function
+    | User -> "user"
+    | Model -> "model"
+    | System -> "user"
+
 
   type message = {
     role : role;
-    parts : part list;
-  }
-
-  type generation_config = {
-    temperature : float option;
-    top_p : float option;
-    top_k : int option;
-    max_output_tokens : int option;
+    parts : string list;
   }
 
   type request = {
     model : string;
     messages : message list;
-    generation_config : generation_config option;
   }
+
+  let make_request ~model messages =
+    { model; messages }
 
   type response = {
     text : string;
     raw : Yojson.Safe.t;
   }
 
-  let default_base_url = "https://generativelanguage.googleapis.com"
-
-  let create ?(base_url = default_base_url) ?api_key () = { base_url; api_key }
-
-  let make_request ?generation_config ~model messages =
-    { model; messages; generation_config }
-
-  let role_to_string = function
-    | User -> "user"
-    | Model -> "model"
-    | System -> "user"
-
-  let part_to_yojson = function
-    | Text text -> `Assoc [ ("text", `String text) ]
-
-  let message_to_yojson { role; parts } =
+  let json_of_message { role; parts } =
+    let json_of_part text = `Assoc ["text", `String text] in
     `Assoc
-      [ ("role", `String (role_to_string role));
-        ("parts", `List (List.map part_to_yojson parts))
+      [
+        "role", `String (string_of_role role);
+        "parts", `List (List.map json_of_part parts)
       ]
 
-  let generation_config_to_yojson cfg =
-    let fields =
-      []
-      |> (fun acc ->
-          match cfg.temperature with
-          | None -> acc
-          | Some v -> ("temperature", `Float v) :: acc)
-      |> (fun acc ->
-          match cfg.top_p with
-          | None -> acc
-          | Some v -> ("topP", `Float v) :: acc)
-      |> (fun acc ->
-          match cfg.top_k with
-          | None -> acc
-          | Some v -> ("topK", `Int v) :: acc)
-      |> (fun acc ->
-          match cfg.max_output_tokens with
-          | None -> acc
-          | Some v -> ("maxOutputTokens", `Int v) :: acc)
-    in
-    `Assoc (List.rev fields)
-
   let json_of_request request =
-    let base = [ ("contents", `List (List.map message_to_yojson request.messages)) ] in
-    let fields =
-      match request.generation_config with
-      | None -> base
-      | Some cfg -> ("generationConfig", generation_config_to_yojson cfg) :: base
-    in
-    `Assoc fields
+    `Assoc ["contents", `List (List.map json_of_message request.messages)]
 
   let trim_trailing_slash s =
     if String.length s > 0 && s.[String.length s - 1] = '/' then
@@ -98,7 +59,8 @@ module Client = struct
 
   let extract_text_from_response json =
     let open Yojson.Safe.Util in
-    json |> member "candidates" |> to_list |> List.hd
+    json
+    |> member "candidates" |> to_list |> List.hd
     |> member "content" |> member "parts" |> to_list |> List.hd |> member "text"
     |> to_string
 
@@ -116,7 +78,7 @@ module Client = struct
     match api_key with
     | None -> Error "Missing Gemini API key. Pass ~api_key or set GEMINI_API_KEY"
     | Some key ->
-      let base_url = trim_trailing_slash client.base_url in
+      let base_url = trim_trailing_slash client.url in
       let path =
         Printf.sprintf "/v1beta/models/%s:generateContent" (Uri.pct_encode request.model)
       in
