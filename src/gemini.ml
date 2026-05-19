@@ -48,6 +48,8 @@ module Client = struct
   end
 
   let generate_content ?(url=default_url) ~key ~model ~messages () =
+    if messages = [] then Error "generate_content requires at least one message"
+    else
     let path = Printf.sprintf "/v1beta/models/%s:generateContent" (Uri.pct_encode model) in
     let uri =
       Uri.of_string url

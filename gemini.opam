@@ -13,6 +13,7 @@ depends: [
   "lwt"
   "cohttp-lwt-unix"
   "yojson"
+  "uri"
   "odoc" {with-doc}
 ]
 build: [
