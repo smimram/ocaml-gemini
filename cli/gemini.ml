@@ -26,7 +26,8 @@ let loop ?url ~key ~model history =
         print_endline "Bye."
       else
         let user_message = { C.role = User; parts = [line] } in
-        match C.generate_content ?url ~key ~model ~messages:history () with
+        let messages = history @ [user_message] in
+        match C.generate_content ?url ~key ~model ~messages () with
         | Error msg ->
           prerr_endline ("Gemini error: " ^ msg);
           loop history
