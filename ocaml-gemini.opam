@@ -13,7 +13,6 @@ depends: [
   "lwt"
   "cohttp-lwt-unix"
   "yojson"
-  "ptime"
   "uri"
   "odoc" {with-doc}
 ]

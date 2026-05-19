@@ -1,0 +1,5 @@
+(library
+ (name gemini)
+ (public_name ocaml-gemini)
+ (libraries lwt.unix cohttp-lwt-unix yojson ptime uri)
+ (wrapped true))

@@ -10,7 +10,9 @@
  (synopsis "OCaml library for interacting with the Gemini API")
  (description "OCaml bindings and client utilities for the Gemini API")
  (depends
-  (ocaml)
+    ocaml
   dune
+    lwt
   cohttp-lwt-unix
-  yojson))
+    yojson
+    uri))
