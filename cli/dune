@@ -1,4 +1,5 @@
 (executable
- (name chat)
- (public_name ocaml-gemini-chat)
- (libraries gemini))
+ (name gemini)
+ (public_name gemini-cli)
+ (libraries gemini)
+)

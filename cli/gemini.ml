@@ -1,6 +1,6 @@
 module C = Gemini.Client
 
-let default_model = "gemini-1.5-flash"
+let default_model = "gemini-3.5-flash"
 
 let print_help () =
   print_endline "Commands:";
@@ -8,7 +8,7 @@ let print_help () =
   print_endline "  /quit or /exit  Leave the chat"
 
 let rec loop client model history =
-  print_string "you> ";
+  print_string "<client> ";
   flush stdout;
   match read_line () with
   | exception End_of_file ->
@@ -31,7 +31,7 @@ let rec loop client model history =
         prerr_endline ("Gemini error: " ^ msg);
         loop client model history
       | Ok response ->
-        Printf.printf "gemini> %s\n%!" response.text;
+        Printf.printf "<gemini> %s\n%!" response.text;
         let model_message = { C.role = Model; parts = [response.text] } in
         loop client model (history @ [ user_message; model_message ])
 

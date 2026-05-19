@@ -1,5 +1,5 @@
 (library
  (name gemini)
  (public_name gemini)
- (libraries lwt.unix cohttp-lwt-unix yojson)
+ (libraries lwt.unix cohttp-lwt-unix yojson uri)
  (wrapped true))

@@ -15,5 +15,6 @@
    lwt
    cohttp-lwt-unix
    yojson
+   uri
  )
 )
