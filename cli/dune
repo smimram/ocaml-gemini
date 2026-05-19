@@ -1,5 +1,6 @@
 (executable
  (name gemini)
  (public_name gemini-cli)
+ (package gemini-cli)
  (libraries gemini)
 )
