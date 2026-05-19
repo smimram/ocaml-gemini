@@ -27,12 +27,22 @@ let loop ?url ~key ~model history =
       else
         let user_message = { C.role = User; parts = [line] } in
         let messages = history @ [user_message] in
-        match C.generate_content ?url ~key ~model ~messages () with
+        let emitted = ref false in
+        let on_chunk chunk =
+          if not !emitted then (
+            print_string "<gemini> ";
+            emitted := true
+          );
+          print_string chunk;
+          flush stdout
+        in
+        match C.generate_content_stream ?url ~key ~model ~messages ~on_chunk () with
         | Error msg ->
+          if !emitted then print_newline ();
           prerr_endline ("Gemini error: " ^ msg);
           loop history
         | Ok text ->
-          Printf.printf "<gemini> %s\n%!" text;
+          if !emitted then print_newline () else print_endline "<gemini>";
           let model_message = { C.role = Model; parts = [text] } in
           loop (history @ [ user_message; model_message ])
   in
