@@ -1,5 +1,6 @@
 (lang dune 3.13)
 (name gemini)
+(version 0.1.0)
 (generate_opam_files true)
 (source (github smimram/ocaml-gemini))
 (authors "Samuel Mimram <smimram@gmail.com>")
