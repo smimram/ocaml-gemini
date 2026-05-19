@@ -2,14 +2,7 @@ module Client = struct
   open Cohttp
   open Lwt.Infix
 
-  type t = {
-    url : string;
-    api_key : string option;
-  }
-
   let default_url = "https://generativelanguage.googleapis.com"
-
-  let create ?(url = default_url) ?api_key () = { url; api_key }
 
   type role =
     | User
@@ -27,19 +20,6 @@ module Client = struct
     parts : string list;
   }
 
-  type request = {
-    model : string;
-    messages : message list;
-  }
-
-  let make_request ~model messages =
-    { model; messages }
-
-  type response = {
-    text : string;
-    raw : Yojson.Safe.t;
-  }
-
   let json_of_message { role; parts } =
     let json_of_part text = `Assoc ["text", `String text] in
     `Assoc
@@ -48,68 +28,57 @@ module Client = struct
         "parts", `List (List.map json_of_part parts)
       ]
 
-  let json_of_request request =
-    `Assoc ["contents", `List (List.map json_of_message request.messages)]
+  type request = {
+    model : string;
+    messages : message list;
+  }
 
-  let trim_trailing_slash s =
-    if String.length s > 0 && s.[String.length s - 1] = '/' then
-      String.sub s 0 (String.length s - 1)
-    else
-      s
+  module Answer = struct
+    let text json =
+      let open Yojson.Safe.Util in
+      json
+      |> member "candidates" |> to_list |> List.hd
+      |> member "content" |> member "parts" |> to_list |> List.hd |> member "text"
+      |> to_string
 
-  let extract_text_from_response json =
-    let open Yojson.Safe.Util in
-    json
-    |> member "candidates" |> to_list |> List.hd
-    |> member "content" |> member "parts" |> to_list |> List.hd |> member "text"
-    |> to_string
+    let error_message json =
+      let open Yojson.Safe.Util in
+      try Some (json |> member "error" |> member "message" |> to_string) with
+      | _ -> None
+  end
 
-  let extract_error_message json =
-    let open Yojson.Safe.Util in
-    try Some (json |> member "error" |> member "message" |> to_string) with
-    | _ -> None
-
-  let generate_content client request =
-    let api_key =
-      match client.api_key with
-      | Some key -> Some key
-      | None -> Sys.getenv_opt "GEMINI_API_KEY"
+  let generate_content ?(url=default_url) ~key ~model ~messages () =
+    let path = Printf.sprintf "/v1beta/models/%s:generateContent" (Uri.pct_encode model) in
+    let uri =
+      Uri.of_string url
+      |> fun u -> Uri.with_path u path
+      |> fun u -> Uri.add_query_param' u ("key", key)
     in
-    match api_key with
-    | None -> Error "Missing Gemini API key. Pass ~api_key or set GEMINI_API_KEY"
-    | Some key ->
-      let base_url = trim_trailing_slash client.url in
-      let path =
-        Printf.sprintf "/v1beta/models/%s:generateContent" (Uri.pct_encode request.model)
-      in
-      let uri =
-        Uri.of_string base_url
-        |> fun u -> Uri.with_path u path
-        |> fun u -> Uri.add_query_param' u ("key", key)
-      in
-      let body = json_of_request request |> Yojson.Safe.to_string in
-      let headers = Header.init_with "content-type" "application/json" in
-      let result =
-        let open Lwt.Syntax in
-        Lwt_main.run
-          (
-            let* (resp, body_stream) = Cohttp_lwt_unix.Client.post ~headers ~body:(Cohttp_lwt.Body.of_string body) uri in
-            Cohttp_lwt.Body.to_string body_stream >|= fun body_text ->
-            let status = Response.status resp in
-            match Yojson.Safe.from_string body_text with
-            | exception _ -> Error (Printf.sprintf "Gemini API returned non-JSON response (%d): %s" (Code.code_of_status status) body_text)
-            | json ->
-              if Code.is_success (Code.code_of_status status) then
-                (try Ok { text = extract_text_from_response json; raw = json } with
-                 | _ -> Error ("Gemini API success response could not be parsed: " ^ body_text))
-              else
-                let message =
-                  match extract_error_message json with
-                  | Some m -> m
-                  | None -> body_text
-                in
-                Error (Printf.sprintf "Gemini API error (%d): %s" (Code.code_of_status status) message)
-          )
-      in
-      result
+    let body = Yojson.Safe.to_string @@ `Assoc ["contents", `List (List.map json_of_message messages)]  in
+    let headers = Header.init_with "content-type" "application/json" in
+    let result =
+      let open Lwt.Syntax in
+      Lwt_main.run
+        (
+          let* (resp, body_stream) = Cohttp_lwt_unix.Client.post ~headers ~body:(Cohttp_lwt.Body.of_string body) uri in
+          Cohttp_lwt.Body.to_string body_stream >|= fun body_text ->
+          let status = Response.status resp in
+          match Yojson.Safe.from_string body_text with
+          | exception _ -> Error (Printf.sprintf "Gemini API returned non-JSON response (%d): %s" (Code.code_of_status status) body_text)
+          | json ->
+            if Code.is_success (Code.code_of_status status) then
+              (
+                try Ok (Answer.text json)
+                with _ -> Error ("Gemini API success response could not be parsed: " ^ body_text)
+              )
+            else
+              let message =
+                match Answer.error_message json with
+                | Some m -> m
+                | None -> body_text
+              in
+              Error (Printf.sprintf "Gemini API error (%d): %s" (Code.code_of_status status) message)
+        )
+    in
+    result
 end
