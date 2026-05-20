@@ -69,13 +69,20 @@ let () =
     (
       prerr_endline "Unexpected positional arguments.";
       Arg.usage specs usage;
-      exit 2
+      exit 1
     );
   print_endline ("Model: " ^ !model);
   print_endline "Type /help for commands.";
   let key =
     match !api_key with
     | Some key -> key
-    | None -> Sys.getenv "GEMINI_API_KEY"
+    | None ->
+      match Sys.getenv_opt "GEMINI_API_KEY" with
+      | Some key -> key
+      | None ->
+        (
+          prerr_endline "Missing Gemini API key. Pass --api-key or set GEMINI_API_KEY.";
+          exit 1
+        )
   in
   loop ?url:!url ~key ~model:!model []
