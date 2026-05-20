@@ -14,37 +14,40 @@ module Client = struct
     | Model -> "model"
     | System -> "user"
 
-
   type message = {
     role : role;
     parts : string list;
   }
 
-  let json_of_message { role; parts } =
-    let json_of_part text = `Assoc ["text", `String text] in
-    `Assoc
-      [
-        "role", `String (string_of_role role);
-        "parts", `List (List.map json_of_part parts)
-      ]
+  module Request = struct
+    type t = {
+      model : string;
+      messages : message list;
+    }
 
-  type request = {
-    model : string;
-    messages : message list;
-  }
+    let uri ~url ~key ~model ?(stream=false) () =
+      let method_name = if stream then "streamGenerateContent" else "generateContent" in
+      let path = Printf.sprintf "/v1beta/models/%s:%s" (Uri.pct_encode model) method_name in
+      let base_uri =
+        Uri.of_string url
+        |> fun uri -> Uri.with_path uri path
+        |> fun uri -> Uri.add_query_param' uri ("key", key)
+      in
+      if stream then Uri.add_query_param' base_uri ("alt", "sse") else base_uri
 
-  let request_body messages =
-    Yojson.Safe.to_string @@ `Assoc ["contents", `List (List.map json_of_message messages)]
-
-  let request_uri ~url ~key ~model ?(stream=false) () =
-    let method_name = if stream then "streamGenerateContent" else "generateContent" in
-    let path = Printf.sprintf "/v1beta/models/%s:%s" (Uri.pct_encode model) method_name in
-    let base_uri =
-      Uri.of_string url
-      |> fun uri -> Uri.with_path uri path
-      |> fun uri -> Uri.add_query_param' uri ("key", key)
-    in
-    if stream then Uri.add_query_param' base_uri ("alt", "sse") else base_uri
+    let body ?(tools=[]) messages =
+      let json_of_part text = `Assoc ["text", `String text] in
+      let json_of_message { role; parts } =
+        `Assoc
+          [
+            "role", `String (string_of_role role);
+            "parts", `List (List.map json_of_part parts)
+          ]
+      in
+      let contents = ["contents", `List (List.map json_of_message messages)] in
+      let tools = if tools = [] then [] else [] in
+      Yojson.Safe.to_string @@ `Assoc (contents@tools)
+  end
 
   module Answer = struct
     let text json =
@@ -76,8 +79,8 @@ module Client = struct
 
   let generate_content ?(url=default_url) ~key ~model ~messages () =
     assert (messages <> []);
-    let uri = request_uri ~url ~key ~model () in
-    let body = request_body messages in
+    let uri = Request.uri ~url ~key ~model () in
+    let body = Request.body messages in
     let headers = Header.init_with "content-type" "application/json" in
     let result =
       let open Lwt.Syntax in
@@ -182,8 +185,8 @@ module Client = struct
 
   let generate_content_stream ?(url=default_url) ~key ~model ~messages ~on_chunk () =
     assert (messages <> []);
-    let uri = request_uri ~stream:true ~url ~key ~model () in
-    let body = request_body messages in
+    let uri = Request.uri ~stream:true ~url ~key ~model () in
+    let body = Request.body messages in
     let headers = Header.init_with "content-type" "application/json" in
     Lwt_main.run
       (
